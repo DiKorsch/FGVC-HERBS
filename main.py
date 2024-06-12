@@ -4,14 +4,13 @@ import torch.nn.functional as F
 import contextlib
 import wandb
 import warnings
-import copy
 
-from models.builder import MODEL_GETTER
-from data.dataset import build_loader
-from utils.costom_logger import timeLogger
-from utils.config_utils import load_yaml, build_record_folder, get_args
-from utils.lr_schedule import cosine_decay, adjust_lr, get_lr
-from eval import evaluate, cal_train_metrics, suppression
+from herbs.models.builder import MODEL_GETTER
+from herbs.data.dataset import build_loader
+from herbs.utils.costom_logger import timeLogger
+from herbs.utils.config_utils import load_yaml, build_record_folder, get_args
+from herbs.utils.lr_schedule import cosine_decay, adjust_lr, get_lr
+from herbs.eval import evaluate, cal_train_metrics, suppression, eval_and_save
 
 warnings.simplefilter("ignore")
 
@@ -26,16 +25,16 @@ def eval_freq_schedule(args, epoch: int):
         args.eval_freq = 2
 
 def set_environment(args, tlogger):
-    
+
     print("Setting Environment...")
 
     args.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    
-    ### = = = =  Dataset and Data Loader = = = =  
+
+    ### = = = =  Dataset and Data Loader = = = =
     tlogger.print("Building Dataloader....")
-    
+
     train_loader, val_loader = build_loader(args)
-    
+
     if train_loader is None and val_loader is None:
         raise ValueError("Find nothing to train or evaluate.")
 
@@ -50,7 +49,7 @@ def set_environment(args, tlogger):
         print("    Validation Samples: 0 ~~~~~> [Only Training]")
     tlogger.print()
 
-    ### = = = =  Model = = = =  
+    ### = = = =  Model = = = =
     tlogger.print("Building Model....")
     model = MODEL_GETTER[args.model_name](
         use_fpn = args.use_fpn,
@@ -70,17 +69,17 @@ def set_environment(args, tlogger):
     # model = torch.nn.DataParallel(model, device_ids=None) # device_ids : None --> use all gpus.
     model.to(args.device)
     tlogger.print()
-    
+
     """
-    if you have multi-gpu device, you can use torch.nn.DataParallel in single-machine multi-GPU 
+    if you have multi-gpu device, you can use torch.nn.DataParallel in single-machine multi-GPU
     situation and use torch.nn.parallel.DistributedDataParallel to use multi-process parallelism.
     more detail: https://pytorch.org/tutorials/beginner/dist_overview.html
     """
-    
+
     if train_loader is None:
         return train_loader, val_loader, model, None, None, None, None
-    
-    ### = = = =  Optimizer = = = =  
+
+    ### = = = =  Optimizer = = = =
     tlogger.print("Building Optimizer....")
     if args.optimizer == "SGD":
         optimizer = torch.optim.SGD(model.parameters(), lr=args.max_lr, nesterov=True, momentum=0.9, weight_decay=args.wdecay)
@@ -106,7 +105,7 @@ def set_environment(args, tlogger):
 
 
 def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_loader):
-    
+
     optimizer.zero_grad()
     total_batchs = len(train_loader) # just for log
     show_progress = [x/10 for x in range(11)] # just for log
@@ -115,7 +114,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
     # temperature = 2 ** (epoch // 10 - 1)
     temperature = 0.5 ** (epoch // 10) * args.temperature
     # temperature = args.temperature
-    
+
     n_left_batchs = len(train_loader) % args.update_freq
 
     for batch_id, (ids, datas, labels) in enumerate(train_loader):
@@ -123,7 +122,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
         """ = = = = adjust learning rate = = = = """
         iterations = epoch * len(train_loader) + batch_id
         adjust_lr(iterations, optimizer, schedule)
-        
+
         # temperature = (args.temperature - 1) * (get_lr(optimizer) / args.max_lr) + 1
 
         batch_size = labels.size(0)
@@ -140,7 +139,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                     'preds_0', 'preds_1'
                 FPN --> return 'layer1', 'layer2', 'layer3', 'layer4' (depend on your setting)
                 ~ --> return 'ori_out'
-            
+
             [Retuen Tensor]
                 'preds_0': logit has not been selected by Selector.
                 'preds_1': logit has been selected by Selector.
@@ -150,7 +149,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
 
             loss = 0.
             for name in outs:
-                
+
                 if "FPN1_" in name:
                     if args.lambda_b0 != 0:
                         aux_name = name.replace("FPN1_", "")
@@ -169,7 +168,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                     if args.lambda_s != 0:
                         S = outs[name].size(1)
                         logit = outs[name].view(-1, args.num_classes).contiguous()
-                        loss_s = nn.CrossEntropyLoss()(logit, 
+                        loss_s = nn.CrossEntropyLoss()(logit,
                                                        labels.unsqueeze(1).repeat(1, S).flatten(0))
                         loss += args.lambda_s * loss_s
                     else:
@@ -199,7 +198,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                         loss += args.lambda_b * loss_b
                     else:
                         loss_b = 0.0
-                
+
                 elif "comb_outs" in name:
                     if not args.use_combiner:
                         raise ValueError("Combiner not use here.")
@@ -211,12 +210,12 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
                 elif "ori_out" in name:
                     loss_ori = F.cross_entropy(outs[name], labels)
                     loss += loss_ori
-            
+
             if batch_id < len(train_loader) - n_left_batchs:
                 loss /= args.update_freq
             else:
                 loss /= n_left_batchs
-        
+
         """ = = = = calculate gradient = = = = """
         if args.use_amp:
             scaler.scale(loss).backward()
@@ -240,7 +239,7 @@ def train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_lo
             msg['info/lr'] = get_lr(optimizer)
             cal_train_metrics(args, msg, outs, labels, batch_size, model.selector.thresholds)
             wandb.log(msg)
-        
+
         train_progress = (batch_id + 1) / total_batchs
         # print(train_progress, show_progress[progress_i])
         if train_progress > show_progress[progress_i]:
@@ -277,7 +276,6 @@ def main(args, tlogger):
             train(args, epoch, model, scaler, amp_context, optimizer, schedule, train_loader)
             tlogger.print()
         else:
-            from eval import eval_and_save
             eval_and_save(args, model, val_loader)
             break
 

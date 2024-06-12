@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 import torch
 import warnings
 torch.autograd.set_detect_anomaly(True)
@@ -7,15 +8,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import cv2
-import os
 import argparse
-import timm
 import matplotlib
 import matplotlib.pyplot as plt
-import seaborn as sns
 
-from utils.config_utils import load_yaml
-from vis_utils import ImgLoader, get_cdict
+from herbs.utils.config_utils import load_yaml
+from herbs.vis_utils import ImgLoader, get_cdict
+from herbs.models.pim_module import PluginModel
 
 global module_id_mapper
 global features
@@ -40,32 +39,31 @@ def backward_hook(module: nn.Module, inp_grad, out_grad):
 
 
 def build_model(pretrainewd_path: str,
-                img_size: int, 
-                fpn_size: int, 
+                img_size: int,
+                fpn_size: int,
                 num_classes: int,
                 num_selects: dict,
-                use_fpn: bool = True, 
+                use_fpn: bool = True,
                 use_selection: bool = True,
-                use_combiner: bool = True, 
+                use_combiner: bool = True,
                 comb_proj_size: int = None):
-    from models.pim_module import PluginMoodel
 
     model = \
-        PluginMoodel(img_size = img_size,
+        PluginModel(img_size = img_size,
                      use_fpn = use_fpn,
                      fpn_size = fpn_size,
                      proj_type = "Linear",
                      upsample_type = "Conv",
                      use_selection = use_selection,
                      num_classes = num_classes,
-                     num_selects = num_selects, 
+                     num_selects = num_selects,
                      use_combiner = use_combiner,
                      comb_proj_size = comb_proj_size)
 
     if pretrainewd_path != "":
         ckpt = torch.load(pretrainewd_path)
         model.load_state_dict(ckpt['model'])
-    
+
     model.eval()
 
     ### hook original layer1~4
@@ -111,7 +109,7 @@ def cal_backward(args, out, sum_type: str = "softmax"):
             tmp_out = out[name].mean(1)
         else:
             tmp_out = out[name]
-        
+
         if sum_type == "softmax":
             tmp_out = torch.softmax(tmp_out, dim=-1)
 
@@ -169,16 +167,15 @@ def plot_grad_cam(features, weights):
 
 if __name__ == "__main__":
 
-    global module_id_mapper, features, grads
-    module_id_mapper, features, grads = {}, {}, {}
 
+    module_id_mapper, features, grads = {}, {}, {}
     """
-    Please add 
+    Please add
     pretrained_path to yaml file.
     """
     # ===== 0. get setting =====
     parser = argparse.ArgumentParser("Visualize SwinT Large")
-    parser.add_argument("-pr", "--pretrained_root", type=str, 
+    parser.add_argument("-pr", "--pretrained_root", type=str,
         help="contain {pretrained_root}/best.pt, {pretrained_root}/config.yaml")
     parser.add_argument("-img", "--image", type=str)
     parser.add_argument("-sn", "--save_name", type=str)
@@ -186,13 +183,13 @@ if __name__ == "__main__":
     parser.add_argument("-usl", "--use_label", default=False, type=bool)
     parser.add_argument("-sum_t", "--sum_features_type", default="softmax", type=str)
     args = parser.parse_args()
-    
+
     load_yaml(args, args.pretrained_root + "/config.yaml")
 
     # ===== 1. build model =====
     model = build_model(pretrainewd_path = args.pretrained_root + "/best.pt",
-                        img_size = args.data_size, 
-                        fpn_size = args.fpn_size, 
+                        img_size = args.data_size,
+                        fpn_size = args.fpn_size,
                         num_classes = args.num_classes,
                         num_selects = args.num_selects)
 
@@ -205,7 +202,7 @@ if __name__ == "__main__":
     out = model(img)
 
     cal_backward(args, out, sum_type="softmax")
-    
+
     # ===== 4. check result =====
     grad_weights = get_grad_cam_weights(grads)
     act_maps = plot_grad_cam(features, grad_weights)
@@ -228,7 +225,7 @@ if __name__ == "__main__":
             sum_act = r_act
         else:
             sum_act *= r_act
-    
+
     sum_act /= sum_act.max()
     sum_act = torchvision.transforms.functional.adjust_gamma(sum_act, 1.0)
     sum_act = sum_act.numpy()[0]
@@ -242,10 +239,10 @@ if __name__ == "__main__":
     plt.imshow(ori_img[:, :, ::-1] / 255)
     plt.imshow(sum_act, alpha=0.5, cmap=cmap) # , alpha=0.5, cmap='jet'
     plt.axis('off')
-    plt.savefig("./{}.jpg".format(args.save_name), 
+    plt.savefig("./{}.jpg".format(args.save_name),
         bbox_inches='tight', pad_inches=0.0, transparent=True)
     plt.show()
-    
+
     # cv2.namedWindow("ori", 0)
     # cv2.imshow("ori", ori_img)
     # cv2.namedWindow("heat", 0)

@@ -1,51 +1,42 @@
+# ruff: noqa: E402
 import torch
 import warnings
 torch.autograd.set_detect_anomaly(True)
 warnings.simplefilter("ignore")
-import torchvision
-import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-import cv2
 import os
-import json
 import argparse
-import timm
-import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sns
 import tqdm
 
-from utils.config_utils import load_yaml
-from vis_utils import ImgLoader
+from herbs.utils.config_utils import load_yaml
+from herbs.vis_utils import ImgLoader
+from herbs.models.pim_module import PluginModelEval
 
 def build_model(pretrainewd_path: str,
-                img_size: int, 
-                fpn_size: int, 
+                img_size: int,
+                fpn_size: int,
                 num_classes: int,
                 num_selects: dict,
-                use_fpn: bool = True, 
+                use_fpn: bool = True,
                 use_selection: bool = True,
-                use_combiner: bool = True, 
+                use_combiner: bool = True,
                 comb_proj_size: int = None):
-    from models.pim_module.pim_module_eval.py import PluginMoodel
 
-    model = \
-        PluginMoodel(img_size = img_size,
-                     use_fpn = use_fpn,
-                     fpn_size = fpn_size,
-                     proj_type = "Linear",
-                     upsample_type = "Conv",
-                     use_selection = use_selection,
-                     num_classes = num_classes,
-                     num_selects = num_selects, 
-                     use_combiner = use_combiner,
-                     comb_proj_size = comb_proj_size)
+    model = PluginModelEval(img_size = img_size,
+                            use_fpn = use_fpn,
+                            fpn_size = fpn_size,
+                            proj_type = "Linear",
+                            upsample_type = "Conv",
+                            use_selection = use_selection,
+                            num_classes = num_classes,
+                            num_selects = num_selects,
+                            use_combiner = use_combiner,
+                            comb_proj_size = comb_proj_size)
 
     if pretrainewd_path != "":
         ckpt = torch.load(pretrainewd_path)
         model.load_state_dict(ckpt['model'])
-    
+
     model.eval()
 
     return model
@@ -53,7 +44,7 @@ def build_model(pretrainewd_path: str,
 def sum_all_out(out, sum_type="softmax"):
     target_layer_names = \
     ['layer1', 'layer2', 'layer3', 'layer4',
-    'FPN1_layer1', 'FPN1_layer2', 'FPN1_layer3', 'FPN1_layer4', 
+    'FPN1_layer1', 'FPN1_layer2', 'FPN1_layer3', 'FPN1_layer4',
     'comb_outs']
 
     sum_out = None
@@ -62,7 +53,7 @@ def sum_all_out(out, sum_type="softmax"):
             tmp_out = out[name].mean(1)
         else:
             tmp_out = out[name]
-        
+
         if sum_type == "softmax":
             tmp_out = torch.softmax(tmp_out, dim=-1)
         if sum_out is None:
@@ -74,7 +65,7 @@ def sum_all_out(out, sum_type="softmax"):
 if __name__ == "__main__":
     # ===== 0. get setting =====
     parser = argparse.ArgumentParser("Visualize SwinT Large")
-    parser.add_argument("-pr", "--pretrained_root", type=str, 
+    parser.add_argument("-pr", "--pretrained_root", type=str,
         help="contain {pretrained_root}/best.pt, {pretrained_root}/config.yaml")
     parser.add_argument("-ir", "--image_root", type=str)
     args = parser.parse_args()
@@ -83,8 +74,8 @@ if __name__ == "__main__":
 
     # ===== 1. build model =====
     model = build_model(pretrainewd_path = args.pretrained_root + "/best.pt",
-                        img_size = args.data_size, 
-                        fpn_size = args.fpn_size, 
+                        img_size = args.data_size,
+                        fpn_size = args.fpn_size,
                         num_classes = args.num_classes,
                         num_selects = args.num_selects)
     model.cuda()
@@ -123,7 +114,7 @@ if __name__ == "__main__":
             img = img.unsqueeze(0) # add batch size dimension
             imgs.append(img)
             update_n += 1
-            if (fi+1) % 32 == 0 or fi == len(files) - 1:    
+            if (fi+1) % 32 == 0 or fi == len(files) - 1:
                 imgs = torch.cat(imgs, dim=0)
             else:
                 continue
@@ -214,7 +205,7 @@ if __name__ == "__main__":
                         if in_pred < 0 or in_pred >= wren.shape[0]-1:
                             in_pred = wren.shape[0]-1
                         wren[ci-basic_n][in_pred] += 1
-                    
+
 
             imgs = []
             img_paths = []
@@ -227,7 +218,7 @@ if __name__ == "__main__":
             else:
                 flycatcher_acc = -1
                 flycatcher_out = -1
-            
+
             if gull.sum() != 0:
                 gull_acc = round(np.trace(gull) / gull.sum() * 100, 3)
                 gull_out = gull[:, -1].sum()
@@ -241,7 +232,7 @@ if __name__ == "__main__":
             else:
                 kingfisher_acc = -1
                 kingfisher_out = -1
-            
+
             if sparrow.sum() != 0:
                 sparrow_acc = round(np.trace(sparrow) / sparrow.sum() * 100, 3)
                 sparrow_out = sparrow[:, -1].sum()
@@ -262,7 +253,7 @@ if __name__ == "__main__":
             else:
                 vireo_acc = -1
                 vireo_out = -1
-            
+
             if warbler.sum() != 0:
                 warbler_acc = round(np.trace(warbler) / warbler.sum() * 100, 3)
                 warbler_out = warbler[:, -1].sum()
@@ -302,7 +293,7 @@ vireo:{}%  out:{}, \n\
 warbler:{}%  out:{}, \n\
 woodpecker:{}%  out:{}, \n\
 wren:{}%  out:{}".format(
-                    top1_acc, top3_acc, top5_acc, 
+                    top1_acc, top3_acc, top5_acc,
                     flycatcher_acc, flycatcher_out,
                     gull_acc, gull_out,
                     kingfisher_acc, kingfisher_out,

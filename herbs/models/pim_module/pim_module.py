@@ -1,24 +1,23 @@
-import timm
 import torch
 import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
-# from torchvision.models.feature_extraction import get_graph_node_names
-# from torchvision.models.feature_extraction import create_feature_extractor
+from torchvision.models.feature_extraction import get_graph_node_names
+from torchvision.models.feature_extraction import create_feature_extractor
 from typing import Union
 import copy
 
 class GCNCombiner(nn.Module):
 
-    def __init__(self, 
+    def __init__(self,
                  total_num_selects: int,
-                 num_classes: int, 
-                 inputs: Union[dict, None] = None, 
+                 num_classes: int,
+                 inputs: Union[dict, None] = None,
                  proj_size: Union[int, None] = None,
                  fpn_size: Union[int, None] = None):
         """
-        If building backbone without FPN, set fpn_size to None and MUST give 
-        'inputs' and 'proj_size', the reason of these setting is to constrain the 
+        If building backbone without FPN, set fpn_size to None and MUST give
+        'inputs' and 'proj_size', the reason of these setting is to constrain the
         dimension of graph convolutional network input.
         """
         super(GCNCombiner, self).__init__()
@@ -50,19 +49,19 @@ class GCNCombiner(nn.Module):
         num_joints = total_num_selects // 64
 
         self.param_pool0 = nn.Linear(total_num_selects, num_joints)
-        
+
         A = torch.eye(num_joints) / 100 + 1 / 100
         self.adj1 = nn.Parameter(copy.deepcopy(A))
         self.conv1 = nn.Conv1d(self.proj_size, self.proj_size, 1)
         self.batch_norm1 = nn.BatchNorm1d(self.proj_size)
-        
+
         self.conv_q1 = nn.Conv1d(self.proj_size, self.proj_size//4, 1)
         self.conv_k1 = nn.Conv1d(self.proj_size, self.proj_size//4, 1)
         self.alpha1 = nn.Parameter(torch.zeros(1))
 
         ### merge information
         self.param_pool1 = nn.Linear(num_joints, 1)
-        
+
         #### class predict
         self.dropout = nn.Dropout(p=0.1)
         self.classifier = nn.Linear(self.proj_size, num_classes)
@@ -148,8 +147,8 @@ class WeaklySelector(nn.Module):
 
     def forward(self, x, logits=None):
         """
-        x : 
-            dictionary contain the features maps which 
+        x :
+            dictionary contain the features maps which
             come from your choosen layers.
             size must be [B, HxW, C] ([B, S, C]) or [B, C, H, W].
             [B,C,H,W] will be transpose to [B, HxW, C] automatically.
@@ -167,7 +166,7 @@ class WeaklySelector(nn.Module):
             C = x[name].size(-1)
             if self.fpn_size is None:
                 logits[name] = getattr(self, "classifier_l_"+name)(x[name])
-            
+
             probs = torch.softmax(logits[name], dim=-1)
             sum_probs = torch.softmax(logits[name].mean(1), dim=-1)
             selections[name] = []
@@ -187,7 +186,7 @@ class WeaklySelector(nn.Module):
                     self.thresholds[name].append(confs[num_select]) # for initialize
                 else:
                     self.thresholds[name][bi] = confs[num_select]
-            
+
             selections[name] = torch.stack(selections[name])
             preds_1 = torch.stack(preds_1)
             preds_0 = torch.stack(preds_0)
@@ -204,12 +203,12 @@ class FPN(nn.Module):
         """
         inputs : dictionary contains torch.Tensor
                  which comes from backbone output
-        fpn_size: integer, fpn 
-        proj_type: 
+        fpn_size: integer, fpn
+        proj_type:
             in ["Conv", "Linear"]
         upsample_type:
             in ["Bilinear", "Conv", "Fc"]
-            for convolution neural network (e.g. ResNet, EfficientNet), recommand 'Bilinear'. 
+            for convolution neural network (e.g. ResNet, EfficientNet), recommand 'Bilinear'.
             for Vit, "Fc". and Swin-T, "Conv"
         """
         super(FPN, self).__init__()
@@ -278,14 +277,14 @@ class FPN(nn.Module):
                 continue
             x[name] = getattr(self, "Proj_"+name)(x[name])
             hs.append(name)
-        
+
         x["FPN1_" + "layer4"] = x["layer4"]
 
         for i in range(len(hs)-1, 0, -1):
             x1_name = hs[i]
             x0_name = hs[i-1]
-            x[x0_name] = self.upsample_add(x[x0_name], 
-                                           x[x1_name], 
+            x[x0_name] = self.upsample_add(x[x0_name],
+                                           x[x1_name],
                                            x1_name)
             x["FPN1_" + x0_name] = x[x0_name]
 
@@ -294,8 +293,8 @@ class FPN(nn.Module):
 
 class FPN_UP(nn.Module):
 
-    def __init__(self, 
-                 inputs: dict, 
+    def __init__(self,
+                 inputs: dict,
                  fpn_size: int):
         super(FPN_UP, self).__init__()
 
@@ -354,19 +353,19 @@ class FPN_UP(nn.Module):
             x1_name = hs[i+1]
             # print(x0_name, x1_name)
             # print(x[x0_name].size(), x[x1_name].size())
-            x[x1_name] = self.downsample_add(x[x0_name], 
-                                             x[x1_name], 
+            x[x1_name] = self.downsample_add(x[x0_name],
+                                             x[x1_name],
                                              x0_name)
         return x
 
 
 
 
-class PluginMoodel(nn.Module):
+class PluginModel(nn.Module):
 
-    def __init__(self, 
-                 # backbone: torch.nn.Module,
-                 # return_nodes: Union[dict, None],
+    def __init__(self,
+                 backbone: torch.nn.Module,
+                 return_nodes: Union[dict, None],
                  img_size: int,
                  use_fpn: bool,
                  fpn_size: Union[int, None],
@@ -374,12 +373,12 @@ class PluginMoodel(nn.Module):
                  upsample_type: str,
                  use_selection: bool,
                  num_classes: int,
-                 num_selects: dict, 
+                 num_selects: dict,
                  use_combiner: bool,
                  comb_proj_size: Union[int, None]
                  ):
         """
-        * backbone: 
+        * backbone:
             torch.nn.Module class (recommand pretrained on ImageNet or IG-3.5B-17k(provided by FAIR))
         * return_nodes:
             e.g.
@@ -392,12 +391,12 @@ class PluginMoodel(nn.Module):
             } # you can see the example on https://pytorch.org/vision/main/feature_extraction.html
             !!! if using 'Swin-Transformer', please set return_nodes to None
             !!! and please set use_fpn to True
-        * feat_sizes: 
-            tuple or list contain features map size of each layers. 
+        * feat_sizes:
+            tuple or list contain features map size of each layers.
             ((C, H, W)). e.g. ((1024, 14, 14), (2048, 7, 7))
-        * use_fpn: 
+        * use_fpn:
             boolean, use features pyramid network or not
-        * fpn_size: 
+        * fpn_size:
             integer, features pyramid network projection dimension
         * num_selects:
             num_selects = {
@@ -407,31 +406,22 @@ class PluginMoodel(nn.Module):
                 "layer3": 128,
                 "layer4": 32,
             }
-        Note: after selector module (WeaklySelector) , the feature map's size is [B, S', C] which 
-        contained by 'logits' or 'selections' dictionary (S' is selection number, different layer 
+        Note: after selector module (WeaklySelector) , the feature map's size is [B, S', C] which
+        contained by 'logits' or 'selections' dictionary (S' is selection number, different layer
         could be different).
         """
-        super(PluginMoodel, self).__init__()
-        
+        super(PluginModel, self).__init__()
+
         ### = = = = = Backbone = = = = =
-        # self.return_nodes = return_nodes
-        # if return_nodes is not None:
-        #     self.backbone = create_feature_extractor(backbone, return_nodes=return_nodes)
-        # else:
-        #     self.backbone = backbone
-        
-        model_name = "swin_large_patch4_window12_384_in22k"
-        self.backbone = timm.create_model(model_name, pretrained=True)    
+        self.return_nodes = return_nodes
+        if return_nodes is not None:
+            self.backbone = create_feature_extractor(backbone, return_nodes=return_nodes)
+        else:
+            self.backbone = backbone
 
         ### get hidden feartues size
         rand_in = torch.randn(1, 3, img_size, img_size)
-        # outs = self.backbone(rand_in)
-
-        outs = {}
-        outs['layer1'] = torch.zeros([1, 2304, 384])
-        outs['layer2'] = torch.zeros([1, 576, 768])
-        outs['layer3'] = torch.zeros([1, 144, 1536])
-        outs['layer4'] = torch.zeros([1, 144, 1536])
+        outs = self.backbone(rand_in)
 
         ### just original backbone
         if not use_fpn and (not use_selection and not use_combiner):
@@ -499,18 +489,7 @@ class PluginMoodel(nn.Module):
             self.add_module("fpn_classifier_down_" + name, m)
 
     def forward_backbone(self, x):
-        results = {}
-        x = self.backbone.patch_embed(x)
-        if self.backbone.absolute_pos_embed is not None:
-            x = x + self.backbone.absolute_pos_embed
-        
-        x = self.backbone.pos_drop(x)
-        results['layer1'] = self.backbone.layers[0](x)
-        results['layer2'] = self.backbone.layers[1](results['layer1'])
-        results['layer3'] = self.backbone.layers[2](results['layer2'])
-        results['layer4'] = self.backbone.layers[3](results['layer3'])
-        return results
-
+        return self.backbone(x)
 
     def fpn_predict_down(self, x: dict, logits: dict):
         """
@@ -519,7 +498,7 @@ class PluginMoodel(nn.Module):
         """
         for name in x:
             if "FPN1_" not in name:
-                continue 
+                continue
             ### predict on each features point
             if len(x[name].size()) == 4:
                 B, C, H, W = x[name].size()
@@ -568,7 +547,7 @@ class PluginMoodel(nn.Module):
             comb_outs = self.combiner(selects)
             logits['comb_outs'] = comb_outs
             return logits
-        
+
         if self.use_selection or self.fpn:
             return logits
 
@@ -584,4 +563,4 @@ class PluginMoodel(nn.Module):
         out = self.classifier(hs)
         logits['ori_out'] = logits
 
-        return logits
+        return

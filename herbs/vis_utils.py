@@ -17,6 +17,7 @@ class ImgLoader(object):
 
     def load(self, image_path: str):
         ori_img = cv2.imread(image_path)
+        assert ori_img is not None, f"Image {image_path} not found."
         assert ori_img.shape[2] == 3, "3(RGB) channels is required."
         img = copy.deepcopy(ori_img)
         img = img[:, :, ::-1] # convert BGR to RGB

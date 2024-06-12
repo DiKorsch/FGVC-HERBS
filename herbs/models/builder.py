@@ -6,11 +6,11 @@ from .pim_module import pim_module
 
 """
 [Default Return]
-Set return_nodes to None, you can use default return type, all of the model in this script 
+Set return_nodes to None, you can use default return type, all of the model in this script
 return four layers features.
 
 [Model Configuration]
-if you are not using FPN module but using Selector and Combiner, you need to give Combiner a 
+if you are not using FPN module but using Selector and Combiner, you need to give Combiner a
 projection  dimension ('proj_size' of GCNCombiner in pim_module.py), because graph convolution
 layer need the input features dimension be the same.
 
@@ -18,7 +18,7 @@ layer need the input features dimension be the same.
 You must use selector so you can use combiner.
 
 [About Costom Model]
-This function is to building swin transformer. timm swin-transformer + torch.fx.proxy.Proxy 
+This function is to building swin transformer. timm swin-transformer + torch.fx.proxy.Proxy
 could cause error, so we set return_nodes to None and change swin-transformer model script to
 return features directly.
 Please check 'timm/models/swin_transformer.py' line 541 to see how to change model if your costom
@@ -46,7 +46,7 @@ def load_model_weights(model, model_path):
 
 def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
                    return_nodes: Union[dict, None] = None,
-                   num_selects: Union[dict, None] = None, 
+                   num_selects: Union[dict, None] = None,
                    img_size: int = 448,
                    use_fpn: bool = True,
                    fpn_size: int = 512,
@@ -56,9 +56,9 @@ def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
                    num_classes: int = 200,
                    use_combiner: bool = True,
                    comb_proj_size: Union[int, None] = None):
-    
+
     import timm
-    
+
     if return_nodes is None:
         return_nodes = {
             'layer1.2.act3': 'layer1',
@@ -73,7 +73,7 @@ def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
             'layer3':32,
             'layer4':32
         }
-    
+
     backbone = timm.create_model('resnet50', pretrained=False, num_classes=11221)
     ### original pretrained path "./models/resnet50_miil_21k.pth"
     if pretrained != "":
@@ -81,8 +81,8 @@ def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
 
     # print(backbone)
     # print(get_graph_node_names(backbone))
-    
-    return pim_module.PluginMoodel(backbone = backbone,
+
+    return pim_module.PluginModel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
@@ -91,14 +91,14 @@ def build_resnet50(pretrained: str = "./resnet50_miil_21k.pth",
                                    upsample_type = upsample_type,
                                    use_selection = use_selection,
                                    num_classes = num_classes,
-                                   num_selects = num_selects, 
+                                   num_selects = num_selects,
                                    use_combiner = num_selects,
                                    comb_proj_size = comb_proj_size)
 
 
 def build_efficientnet(pretrained: bool = True,
                        return_nodes: Union[dict, None] = None,
-                       num_selects: Union[dict, None] = None, 
+                       num_selects: Union[dict, None] = None,
                        img_size: int = 448,
                        use_fpn: bool = True,
                        fpn_size: int = 512,
@@ -125,7 +125,7 @@ def build_efficientnet(pretrained: bool = True,
             'layer3':32,
             'layer4':32
         }
-    
+
     backbone = models.efficientnet_b7(pretrained=pretrained)
     backbone.train()
 
@@ -133,7 +133,7 @@ def build_efficientnet(pretrained: bool = True,
     # print(get_graph_node_names(backbone))
     ## features.1~features.7
 
-    return pim_module.PluginMoodel(backbone = backbone,
+    return pim_module.PluginModel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
@@ -142,7 +142,7 @@ def build_efficientnet(pretrained: bool = True,
                                    upsample_type = upsample_type,
                                    use_selection = use_selection,
                                    num_classes = num_classes,
-                                   num_selects = num_selects, 
+                                   num_selects = num_selects,
                                    use_combiner = num_selects,
                                    comb_proj_size = comb_proj_size)
 
@@ -151,7 +151,7 @@ def build_efficientnet(pretrained: bool = True,
 
 def build_vit16(pretrained: str = "./vit_base_patch16_224_miil_21k.pth",
                 return_nodes: Union[dict, None] = None,
-                num_selects: Union[dict, None] = None, 
+                num_selects: Union[dict, None] = None,
                 img_size: int = 448,
                 use_fpn: bool = True,
                 fpn_size: int = 512,
@@ -163,7 +163,7 @@ def build_vit16(pretrained: str = "./vit_base_patch16_224_miil_21k.pth",
                 comb_proj_size: Union[int, None] = None):
 
     import timm
-    
+
     backbone = timm.create_model('vit_base_patch16_224_miil_in21k', pretrained=False)
     ### original pretrained path "./models/vit_base_patch16_224_miil_21k.pth"
     if pretrained != "":
@@ -207,7 +207,7 @@ def build_vit16(pretrained: str = "./vit_base_patch16_224_miil_21k.pth",
     posemb = torch.cat([posemb_tok, posemb_grid], dim=1)
     backbone.pos_embed = torch.nn.Parameter(posemb)
 
-    return pim_module.PluginMoodel(backbone = backbone,
+    return pim_module.PluginModel(backbone = backbone,
                                    return_nodes = return_nodes,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
@@ -216,13 +216,13 @@ def build_vit16(pretrained: str = "./vit_base_patch16_224_miil_21k.pth",
                                    upsample_type = upsample_type,
                                    use_selection = use_selection,
                                    num_classes = num_classes,
-                                   num_selects = num_selects, 
+                                   num_selects = num_selects,
                                    use_combiner = num_selects,
                                    comb_proj_size = comb_proj_size)
 
 
 def build_swintransformer(pretrained: bool = True,
-                          num_selects: Union[dict, None] = None, 
+                          num_selects: Union[dict, None] = None,
                           img_size: int = 384,
                           use_fpn: bool = True,
                           fpn_size: int = 512,
@@ -233,7 +233,7 @@ def build_swintransformer(pretrained: bool = True,
                           use_combiner: bool = True,
                           comb_proj_size: Union[int, None] = None):
     """
-    This function is to building swin transformer. timm swin-transformer + torch.fx.proxy.Proxy 
+    This function is to building swin transformer. timm swin-transformer + torch.fx.proxy.Proxy
     could cause error, so we set return_nodes to None and change swin-transformer model script to
     return features directly.
     Please check 'timm/models/swin_transformer.py' line 541 to see how to change model if your costom
@@ -255,9 +255,9 @@ def build_swintransformer(pretrained: bool = True,
     # print(backbone)
     # print(get_graph_node_names(backbone))
     backbone.train()
-    
+
     print("Building...")
-    return pim_module.PluginMoodel(backbone = backbone,
+    return pim_module.PluginModel(backbone = backbone,
                                    return_nodes = None,
                                    img_size = img_size,
                                    use_fpn = use_fpn,
@@ -266,7 +266,7 @@ def build_swintransformer(pretrained: bool = True,
                                    upsample_type = upsample_type,
                                    use_selection = use_selection,
                                    num_classes = num_classes,
-                                   num_selects = num_selects, 
+                                   num_selects = num_selects,
                                    use_combiner = num_selects,
                                    comb_proj_size = comb_proj_size)
 
@@ -277,7 +277,7 @@ if __name__ == "__main__":
     ### ==== resnet50 ====
     # model = build_resnet50(pretrained='./resnet50_miil_21k.pth')
     # t = torch.randn(1, 3, 448, 448)
-    
+
     ### ==== swin-t ====
     # model = build_swintransformer(False)
     # t = torch.randn(1, 3, 384, 384)
@@ -291,7 +291,7 @@ if __name__ == "__main__":
     t = torch.randn(1, 3, 448, 448)
 
     model.cuda()
-    
+
     t = t.cuda()
     outs = model(t)
     for out in outs:

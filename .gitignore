@@ -175,3 +175,5 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
 
+CUB200-2011.zip
+CUB200-2011/
